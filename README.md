@@ -8,6 +8,8 @@
   ```
   python generate_json_config_rna.py
   ```
+3. QC, Trim, Map, and featureCounts
+- Snakefile `process_rna.snakefile`
 
 ## 04_measure_expression_level
 - Compute TPM
