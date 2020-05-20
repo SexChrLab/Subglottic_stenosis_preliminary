@@ -9,7 +9,7 @@
   python generate_json_config_rna.py
   ```
 
-## Measure expression level
+## 04_measure_expression_level
 - Compute TPM
   + Snakefile `measure_expression_level.snakefile`
 - Concat TPM values for all samples:
