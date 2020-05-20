@@ -1,0 +1,216 @@
+---
+title: "Idiopathic subglottic stenosis RNAseq analysis NonDisease vs Disease"
+author: "Tanya Phung"
+date: "4/28/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(limma)
+library(Glimma)
+library(edgeR)
+library(ggplot2)
+```
+
+## 1. Data
+
+```{r, echo=FALSE, warning=FALSE}
+library(knitr)
+library(kableExtra)
+data = read.table('c://Users/tuyen/Documents/postdoc_asu/projects/SubglotticStenosis/02_mds/pheno_nondisease_vs_disease.csv', sep = ',', header = T)
+kable(data) %>%
+  kable_styling("striped", full_width = F) %>%
+  row_spec(1:3, bold = T, color = "white", background = "black")
+```
+
+## 2. Reading in count-data
+```{r}
+setwd('c://Users/tuyen/Documents/postdoc_asu/projects/SubglotticStenosis/02_mds/')
+# Reading in expression data
+# gene count information for each sample
+# each column is a sample
+# each row is the raw count (expression) for that gene
+counts <- read.table("featureCounts_nondisease_vs_disease.tsv", sep = "\t")
+colnames(counts) = c("12s", "13s", "15s", "1s", "3s", "4s2", "5s1", "6s1", "7s")
+head(counts)
+
+# Reading in gene data
+# the gene file contains information about the genes
+# Geneid, Chr, Start, End, Length
+genes <- read.table("genesID.csv", header = TRUE, sep = "\t")
+head(genes)
+
+# Reading in phenotype data
+# the pheno file contains information about the samples
+pheno <- read.table("pheno_nondisease_vs_disease.csv", header = TRUE, sep = ",")
+head(pheno)
+
+# Create the DGEList object using the counts and genes
+dge <- DGEList(counts=counts, genes=genes)
+dge$samples$status <- pheno$status
+table(dge$samples$status) # Inspecting the number (N) of samples in each group
+dim(dge)
+```
+
+## 3. Data pre-processing
+### A. Transformations from the raw-scale
+```{r} 
+cpm <- cpm(dge)
+lcpm <- cpm(dge, log=TRUE) #log=TRUE: the cpm function adds an offset to the CPM values before converting to the log2-scale.
+```
+
+### B. Removing genes that are lowly expressed
+Use `filterByExpr` function in the edgeR package: By default, the function keeps genes with about 10 read counts or more in a minimum number of samples, where the number of samples is chosen according to the minimum group sample size. The actual filtering uses CPM values rather than counts in order to avoid giving preference to samples with large library sizes (source: https://www.bioconductor.org/packages/devel/workflows/vignettes/RNAseq123/inst/doc/limmaWorkflow.html)
+
+For this dataset, the median library size is about 14 million and 10/14 approx. 0.7, so the filterByExpr function keeps genes that have a CPM of 0.7 or more in at least six samples.
+
+Note the variation in library size. 
+
+```{r}
+L <- mean(dge$samples$lib.size) * 1e-6 #average library size
+M <- median(dge$samples$lib.size) * 1e-6 #median library size
+c(L, M)
+
+data = data.frame(samples=c("12s", "13s", "15s", "1s", "3s", "4s2", "5s1", "6s1", "7s"), size=dge$samples$lib.size * 1e-6)
+ggplot(data, aes(x=samples, y=size)) +
+  geom_point() +
+  theme_bw() +
+  labs(x="Samples", y="Library size (millions)")
+
+keep.exprs <- filterByExpr(dge, group=dge$samples$status)
+dge <- dge[keep.exprs,, keep.lib.sizes=FALSE]
+dim(dge)
+```
+
+#### Plotting the density of log-CPM values for raw-prefiltered data and post-filtered data
+
+```{r, warning=FALSE}
+lcpm.cutoff <- log2(10/M + 2/L)
+lcpm.cutoff
+
+library(RColorBrewer)
+samplenames <- c("12s", "13s", "15s", "1s", "3s", "4s2", "5s1", "6s1", "7s")
+nsamples <- ncol(dge)
+col <- brewer.pal(nsamples, "Paired")
+par(mfrow=c(1,2))
+plot(density(lcpm[,1]), col=col[1], lwd=2, ylim=c(0, 0.9), las=2, main="", xlab="")
+title(main="A. Raw data", xlab="Log-cpm")
+abline(v=lcpm.cutoff, lty=3)
+for (i in 2:nsamples){
+  den <- density(lcpm[,i])
+  lines(den$x, den$y, col=col[i], lwd=2)
+}
+legend("topright", samplenames, text.col=col, bty="n")
+lcpm <- cpm(dge, log=TRUE)
+plot(density(lcpm[,1]), col=col[1], lwd=2, ylim=c(0,0.4), las=2, main="", xlab="")
+title(main="B. Filtered data", xlab="Log-cpm")
+abline(v=lcpm.cutoff, lty=3)
+for (i in 2:nsamples){
+  den <- density(lcpm[,i])
+  lines(den$x, den$y, col=col[i], lwd=2)
+}
+legend("topright", samplenames, text.col=col, bty="n")
+```
+
+### C. Normalizing gene expression distributions
+Here, we normalize using the method of trimmed mean of M-values (TMM). We use the `calcNormFactors` function in edgeR.
+
+```{r}
+par(mfrow=c(1,2))
+lcpm <- cpm(dge, log=TRUE)
+boxplot(lcpm, las=2, col=col, main="")
+title(main="A. Unnormalised data",ylab="Log-cpm")
+
+dge <- calcNormFactors(dge)
+dge$samples$norm.factors
+
+lcpm <- cpm(dge, log=TRUE)
+boxplot(lcpm, las=2, col=col, main="")
+title(main="B. Normalised data",ylab="Log-cpm")
+```
+
+### D. Unsupervised clustering of samples
+```{r, warning=FALSE}
+status <- as.factor(c("nondisease", "nondisease", "nondisease", "disease", "disease", "disease", "disease", "disease", "disease"))
+lane <- as.factor(c("2", "4", "2", "3", "1", "2", "5", "2", "1"))
+id <- as.factor(c("ND", "ND", "ND", "1", "3", "4", "5", "6", "7"))
+
+lcpm <- cpm(dge, log=TRUE)
+
+par(mfrow=c(1,3))
+col.group <- status
+levels(col.group) <-  brewer.pal(nlevels(col.group), "Set2")
+col.group <- as.character(col.group)
+col.lane <- lane
+levels(col.lane) <-  brewer.pal(nlevels(col.lane), "Set2")
+col.lane <- as.character(col.lane)
+col.id <- id
+levels(col.id) <-  brewer.pal(nlevels(col.id), "Set2")
+col.id <- as.character(col.id)
+plotMDS(lcpm, labels=status, col=col.group, dim=c(1,2), top = 100, gene.selection = "common")
+title(main="A. Sample groups Dim 1&2")
+plotMDS(lcpm, labels=lane, col=col.lane, dim=c(1,2), top = 100, gene.selection = "common")
+title(main="B. Sequencing lanes Dim 1&2")
+plotMDS(lcpm, labels=id, col=col.id, dim=c(1,2), top = 100, gene.selection = "common")
+title(main="C. Sample IDs Dim 1&2")
+
+plotMDS(lcpm, labels=status, col=col.group, dim=c(2,3), top = 100, gene.selection = "common")
+title(main="A. Sample groups Dim 2&3")
+plotMDS(lcpm, labels=lane, col=col.lane, dim=c(2,3), top = 100, gene.selection = "common")
+title(main="B. Sequencing lanes Dim 2&3")
+plotMDS(lcpm, labels=id, col=col.id, dim=c(2,3), top = 100, gene.selection = "common")
+title(main="C. Sample IDs Dim 2&3")
+
+plotMDS(lcpm, labels=status, col=col.group, dim=c(3,4), top = 100, gene.selection = "common")
+title(main="A. Sample groups Dim 3&4")
+plotMDS(lcpm, labels=lane, col=col.lane, dim=c(3,4), top = 100, gene.selection = "common")
+title(main="B. Sequencing lanes Dim 3&4")
+plotMDS(lcpm, labels=id, col=col.id, dim=c(3,4), top = 100, gene.selection = "common")
+title(main="C. Sample IDs Dim 3&4")
+```
+
+
+## 4. Differential expression analysis
+### A. Create a design matrix and contrasts
+
+Fit a linear model to the data, assuming that the underlying data is normally distributed. 
+Set up a design matric with status information (control versus disease).
+Set up model contrasts for pairwise comparison.
+```{r}
+design <- model.matrix(~0+dge$samples$status)
+colnames(design) <- gsub("dge\\$samples\\$status", "", colnames(design))
+head(design)
+
+# Contrast design for differential expression
+# Defining pairwise comparisons
+contr.matrix <- makeContrasts(disease_vs_nondisease = disease - nondisease,
+                              levels=colnames(design))
+head(contr.matrix) # inspect the contrast matrix
+```
+
+### B. Removing heteroscedascity from count data
+In RNAseq count data, the variance is not independent of the mean. Therefore, we need to account for the mean-variance relationship using the precision weights calculated by the `voom` function. 
+```{r}
+par(mfrow=c(1,2))
+v <- voom(dge, design, plot=TRUE)
+v
+
+vfit <- lmFit(v, design)
+vfit <- contrasts.fit(vfit, contrasts=contr.matrix)
+efit <- eBayes(vfit)
+plotSA(efit, main="Final model: Mean-variance trend")
+```
+
+### C. Examining the number of DE genes
+```{r}
+summary(decideTests(efit))
+```
+
+Obtaining a list of all genes with values for log2foldchange and pvalues
+
+```{r}
+coef = 1
+gene_table <- topTable(efit, coef=coef, n=Inf, adjust.method = "BH", sort.by = "logFC")
+write.table(gene_table, 'c://Users/tuyen/Documents/postdoc_asu/projects/SubglotticStenosis/03_differential_expression/all_genes_logFC_NonDiseaseVsDisease.tsv.', row.names = F, quote = F, sep='\t')
+```
