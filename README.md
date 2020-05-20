@@ -12,6 +12,16 @@
 3. QC, Trim, Map, and featureCounts
 - Snakefile `process_rna.snakefile`
 
+## 02_mds
+1. Generate the counts for all samples
+  ```
+  python generate_counts_tsv_for_mds.py
+  ```
+
+## 03_differential_expression
+- `SubglotticStenosis_Rnaseq_Control_vs_Disease.Rmd`
+- `SubglotticStenosis_Rnaseq_NonDisease_vs_Disease.Rmd`
+
 ## 04_measure_expression_level
 - Compute TPM
   + Snakefile `measure_expression_level.snakefile`
