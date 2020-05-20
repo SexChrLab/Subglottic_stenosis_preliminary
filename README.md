@@ -8,6 +8,7 @@
   ```
   python generate_json_config_rna.py
   ```
+  - This script outputs `process_rna_config.json`
 3. QC, Trim, Map, and featureCounts
 - Snakefile `process_rna.snakefile`
 
