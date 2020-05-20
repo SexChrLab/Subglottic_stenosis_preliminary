@@ -8,3 +8,8 @@
   ```
   python generate_json_config_rna.py
   ```
+
+## Measure expression level
+- Compute TPM
+  + Snakefile `measure_expression_level.snakefile`
+
