@@ -1,0 +1,10 @@
+sample,lane,status,id
+12s,2,nondisease,ND
+13s,4,nondisease,ND
+15s,2,nondisease,ND
+1s,3,disease,1
+3s,1,disease,3
+4s2,2,disease,4
+5s1,5,disease,5
+6s1,2,disease,6
+7s,1,disease,7
